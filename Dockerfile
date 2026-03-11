@@ -2,23 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Устанавливаем ffmpeg и зависимости
-RUN apt-get update && apt-get install -y \
+# Ставим ТОЛЬКО ffmpeg, без рекомендуемых пакетов (экономия ~1.5ГБ)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Копируем и ставим Python-зависимости
+# Python-зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Копируем код
+# Код
 COPY bot.py .
 
-# Если есть cookies-файл — копируем (опционально)
+# Cookies (опционально — не сломает сборку если файла нет)
 COPY cookies.tx[t] /app/
 
-# Создаём non-root пользователя
+# Non-root пользователь
 RUN useradd -m -u 1000 botuser && \
     mkdir -p /tmp/yt-saver-downloads && \
     chown -R botuser:botuser /app /tmp/yt-saver-downloads
