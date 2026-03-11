@@ -1,6 +1,6 @@
 """
-YouTube Saver Telegram Bot v1.1.0
-Скачивает YouTube видео в лучшем качестве + отдельно аудио.
+YouTube & Instagram Saver Telegram Bot v1.2.0
+Скачивает YouTube/Instagram видео в лучшем качестве + отдельно аудио.
 Если видео > 50MB — сжимает через ffmpeg с сохранением aspect ratio.
 """
 
@@ -39,6 +39,13 @@ TELEGRAM_FILE_LIMIT = 50 * 1024 * 1024  # 50 MB
 YOUTUBE_REGEX = re.compile(
     r"(https?://)?(www\.)?"
     r"(youtube\.com/(watch\?v=|shorts/|live/|source/|embed/|v/)|youtu\.be/)"
+    r"[^\s]+"
+)
+
+INSTAGRAM_REGEX = re.compile(
+    r"(https?://)?(www\.)?"
+    r"(instagram\.com/(reel|reels|p|tv)/"
+    r"|instagr\.am/)"
     r"[^\s]+"
 )
 
@@ -328,14 +335,81 @@ def download_audio_only(url: str, work_dir: str) -> dict:
     }
 
 
+def download_instagram(url: str, work_dir: str) -> dict:
+    """
+    Скачивает Instagram Reels/пост.
+    Возвращает dict с путями к файлам.
+    """
+    video_path = os.path.join(work_dir, "video.mp4")
+    audio_path = os.path.join(work_dir, "audio.mp3")
+
+    # Для Instagram не нужен player_client, используем простые опции
+    ig_base_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": 120,
+        "retries": 10,
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                "Version/17.0 Mobile/15E148 Safari/604.1"
+            ),
+        },
+    }
+
+    # Если есть cookies — используем (может понадобиться для приватных аккаунтов)
+    if os.path.isfile(COOKIES_FILE):
+        ig_base_opts["cookiefile"] = COOKIES_FILE
+
+    # ── Видео ──
+    video_opts = {
+        **ig_base_opts,
+        "format": "best[ext=mp4]/best",
+        "outtmpl": video_path,
+    }
+
+    logger.info(f"Скачиваю Instagram видео: {url}")
+    with yt_dlp.YoutubeDL(video_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+
+    title = info.get("title", "instagram_video")
+    duration = info.get("duration", 0)
+
+    # ── Аудио ──
+    audio_opts = {
+        **ig_base_opts,
+        "format": "bestaudio/best",
+        "outtmpl": os.path.join(work_dir, "audio.%(ext)s"),
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "320",
+            }
+        ],
+    }
+
+    logger.info(f"Скачиваю Instagram аудио: {url}")
+    with yt_dlp.YoutubeDL(audio_opts) as ydl:
+        ydl.download([url])
+
+    return {
+        "title": title,
+        "duration": duration,
+        "video_path": video_path,
+        "audio_path": audio_path,
+    }
+
+
 # ─── Обработчики Telegram ────────────────────────────────────────────────────
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик /start."""
     await update.message.reply_text(
-        "🎬 *YouTube Saver*\n\n"
-        "Отправь мне ссылку на YouTube видео, и я скачаю для тебя:\n"
+        "🎬 *YT & IG Saver*\n\n"
+        "Отправь мне ссылку на YouTube или Instagram, и я скачаю:\n"
         "📹 Видео в лучшем качестве\n"
         "🎵 Аудио отдельно (MP3 320kbps)\n\n"
         "Просто кинь ссылку!",
@@ -347,16 +421,16 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик /help."""
     await update.message.reply_text(
         "📖 *Как пользоваться:*\n\n"
-        "1️⃣ Отправь ссылку на YouTube видео\n"
+        "1️⃣ Отправь ссылку на YouTube или Instagram\n"
         "2️⃣ Подожди, пока я скачаю и обработаю\n"
         "3️⃣ Получи видео + аудио файлы\n\n"
-        "🔗 *Поддерживаемые форматы ссылок:*\n"
+        "🔗 *Поддерживаемые ссылки:*\n"
         "• `youtube.com/watch?v=...`\n"
         "• `youtu.be/...`\n"
         "• `youtube.com/shorts/...`\n"
-        "• `youtube.com/source/.../shorts`\n\n"
-        "⚡ Если видео больше 50 МБ — автоматически сожму "
-        "с сохранением качества и пропорций.",
+        "• `instagram.com/reel/...`\n"
+        "• `instagram.com/p/...`\n\n"
+        "⚡ Видео больше 50 МБ — автоматически сожму.",
         parse_mode=constants.ParseMode.MARKDOWN,
     )
 
@@ -364,28 +438,44 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает входящие сообщения со ссылками."""
     text = update.message.text or ""
-    match = YOUTUBE_REGEX.search(text)
 
-    if not match:
+    # Определяем тип ссылки
+    yt_match = YOUTUBE_REGEX.search(text)
+    ig_match = INSTAGRAM_REGEX.search(text)
+
+    if not yt_match and not ig_match:
         await update.message.reply_text(
-            "🤔 Не вижу ссылку на YouTube.\n"
-            "Отправь ссылку вида: `youtube.com/watch?v=...`",
+            "🤔 Не вижу ссылку на YouTube или Instagram.\n"
+            "Отправь ссылку вида:\n"
+            "• `youtube.com/watch?v=...`\n"
+            "• `instagram.com/reel/...`",
             parse_mode=constants.ParseMode.MARKDOWN,
         )
         return
 
-    url = match.group(0)
-    normalized = normalize_youtube_url(url)
-    logger.info(f"Получена ссылка: {url} → {normalized}")
+    is_instagram = ig_match is not None and yt_match is None
+    url = ig_match.group(0) if is_instagram else yt_match.group(0)
+    source = "Instagram" if is_instagram else "YouTube"
 
-    status_msg = await update.message.reply_text("⏳ Скачиваю видео… Подожди немного.")
+    if not is_instagram:
+        normalized = normalize_youtube_url(url)
+        logger.info(f"[{source}] Получена ссылка: {url} → {normalized}")
+    else:
+        logger.info(f"[{source}] Получена ссылка: {url}")
+
+    status_msg = await update.message.reply_text(f"⏳ Скачиваю из {source}… Подожди немного.")
 
     work_dir = tempfile.mkdtemp(prefix="ytsaver_")
 
     try:
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, download_video, url, work_dir
-        )
+        if is_instagram:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, download_instagram, url, work_dir
+            )
+        else:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, download_video, url, work_dir
+            )
 
         title = result["title"]
         safe_title = sanitize_filename(title)
