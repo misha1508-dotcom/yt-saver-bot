@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  yt-saver:
+    build: .
+    container_name: yt-saver
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - COOKIES_FILE=/app/cookies.txt
+    volumes:
+      - yt-downloads:/tmp/yt-saver-downloads
+    restart: unless-stopped
+
+volumes:
+  yt-downloads:
