@@ -11,12 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python-зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade "yt-dlp[default]"
 
 # Код
 COPY bot.py .
 
-# Cookies (опционально — не сломает сборку если файла нет)
+# Cookies (опционально)
 COPY cookies.tx[t] /app/
 
 # Non-root пользователь
