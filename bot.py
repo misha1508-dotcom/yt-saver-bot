@@ -255,7 +255,7 @@ def download_video(url: str, work_dir: str) -> dict:
     # ── Скачиваем видео с retry ──
     video_opts = {
         **base_opts,
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo+bestaudio/best",
         "outtmpl": video_path,
         "merge_output_format": "mp4",
     }
@@ -365,8 +365,9 @@ def download_instagram(url: str, work_dir: str) -> dict:
     # ── Видео ──
     video_opts = {
         **ig_base_opts,
-        "format": "best[ext=mp4]/best",
+        "format": "bestvideo+bestaudio/best",
         "outtmpl": video_path,
+        "merge_output_format": "mp4",
     }
 
     logger.info(f"Скачиваю Instagram видео: {url}")
