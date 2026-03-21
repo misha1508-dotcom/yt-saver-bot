@@ -584,6 +584,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     filename=f"{safe_title}.mp4",
                     caption=caption,
                     parse_mode=constants.ParseMode.MARKDOWN,
+                    write_timeout=300,
+                    read_timeout=300,
                 )
         else:
             await tg_retry(
@@ -604,6 +606,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     filename=f"{safe_title}.mp3",
                     caption=f"🎵 *{title}*",
                     parse_mode=constants.ParseMode.MARKDOWN,
+                    write_timeout=300,
+                    read_timeout=300,
                 )
         else:
             await tg_retry(
@@ -673,10 +677,11 @@ def main() -> None:
     logger.info(f"Cookies файл: {'найден' if os.path.isfile(COOKIES_FILE) else 'не найден'}")
 
     # Увеличиваем таймауты httpx для Telegram API
+    # write_timeout/read_timeout = 300s — для загрузки файлов до 50 МБ
     request = HTTPXRequest(
         connect_timeout=30.0,
-        read_timeout=60.0,
-        write_timeout=60.0,
+        read_timeout=300.0,
+        write_timeout=300.0,
         pool_timeout=60.0,
     )
 
