@@ -610,8 +610,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "⚠️ Аудио тоже слишком большое для Telegram.",
             )
 
-        await tg_retry(status_msg.delete)
-
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
         logger.error(f"Ошибка yt-dlp для {url}: {error_msg}", exc_info=True)
