@@ -568,20 +568,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             video_size = get_file_size(video_path)
             video_compressed = True
 
-        await tg_retry(status_msg.edit_text, "📤 Отправляю файлы…")
+        # ── Подпись отдельным сообщением ──
+        caption = f"🎬 *{title}*"
+        if video_compressed:
+            caption += "\n📦 _Сжато для Telegram_"
+        await tg_retry(status_msg.edit_text, caption, parse_mode=constants.ParseMode.MARKDOWN)
 
         # ── Отправляем видео ──
         if video_size <= TELEGRAM_FILE_LIMIT:
             with open(video_path, "rb") as vf:
-                caption = f"🎬 *{title}*"
-                if video_compressed:
-                    caption += "\n📦 _Сжато для Telegram_"
                 await tg_retry(
                     update.message.reply_document,
                     document=vf,
                     filename=f"{safe_title}.mp4",
-                    caption=caption,
-                    parse_mode=constants.ParseMode.MARKDOWN,
                     write_timeout=300,
                     read_timeout=300,
                 )
@@ -602,8 +601,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     audio=af,
                     title=title,
                     filename=f"{safe_title}.mp3",
-                    caption=f"🎵 *{title}*",
-                    parse_mode=constants.ParseMode.MARKDOWN,
                     write_timeout=300,
                     read_timeout=300,
                 )
