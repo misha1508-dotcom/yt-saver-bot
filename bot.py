@@ -156,6 +156,36 @@ def get_file_size(path: str) -> int:
     return os.path.getsize(path)
 
 
+def find_downloaded_file(work_dir: str, prefix: str, preferred_ext: str = "mp4") -> str:
+    """
+    Находит скачанный файл в work_dir по префиксу.
+    yt-dlp при merge может создать файл с другим именем/расширением.
+    Возвращает путь к самому большому файлу с нужным префиксом.
+    """
+    candidates = []
+    for f in os.listdir(work_dir):
+        if f.startswith(prefix):
+            full = os.path.join(work_dir, f)
+            if os.path.isfile(full) and os.path.getsize(full) > 0:
+                candidates.append(full)
+
+    if not candidates:
+        # Fallback: ищем любой файл с нужным расширением
+        for f in os.listdir(work_dir):
+            full = os.path.join(work_dir, f)
+            if f.endswith(f".{preferred_ext}") and os.path.isfile(full) and os.path.getsize(full) > 0:
+                candidates.append(full)
+
+    if not candidates:
+        raise FileNotFoundError(f"Не найден скачанный файл с префиксом '{prefix}' в {work_dir}")
+
+    # Предпочитаем файл с нужным расширением, иначе самый большой
+    preferred = [c for c in candidates if c.endswith(f".{preferred_ext}")]
+    if preferred:
+        return max(preferred, key=os.path.getsize)
+    return max(candidates, key=os.path.getsize)
+
+
 def compress_video(input_path: str, output_path: str, target_size_mb: float = 49.0) -> str:
     """
     Сжимает видео до target_size_mb, сохраняя aspect ratio.
@@ -268,8 +298,6 @@ def download_video(url: str, work_dir: str) -> dict:
     """
     source = is_source_url(url)
     url = normalize_youtube_url(url)
-    video_path = os.path.join(work_dir, "video.mp4")
-    audio_path = os.path.join(work_dir, "audio.mp3")
 
     base_opts = get_base_yt_opts(for_source=source)
 
@@ -277,7 +305,7 @@ def download_video(url: str, work_dir: str) -> dict:
     video_opts = {
         **base_opts,
         "format": "bestvideo+bestaudio/best",
-        "outtmpl": video_path,
+        "outtmpl": os.path.join(work_dir, "video.%(ext)s"),
         "merge_output_format": "mp4",
     }
 
@@ -294,6 +322,10 @@ def download_video(url: str, work_dir: str) -> dict:
             first = entries[0]
             title = first.get("title", title)
             duration = first.get("duration", duration)
+
+    # Найти реальный скачанный видеофайл
+    video_path = find_downloaded_file(work_dir, "video", "mp4")
+    logger.info(f"Видеофайл найден: {video_path} ({os.path.getsize(video_path)} bytes)")
 
     # ── Скачиваем аудио с retry ──
     audio_opts = {
@@ -312,6 +344,10 @@ def download_video(url: str, work_dir: str) -> dict:
     logger.info(f"Скачиваю аудио: {url}")
     _try_download(url, audio_opts)
 
+    # Найти реальный аудиофайл
+    audio_path = find_downloaded_file(work_dir, "audio", "mp3")
+    logger.info(f"Аудиофайл найден: {audio_path} ({os.path.getsize(audio_path)} bytes)")
+
     return {
         "title": title,
         "duration": duration,
@@ -324,7 +360,6 @@ def download_audio_only(url: str, work_dir: str) -> dict:
     """Скачивает только аудио с retry."""
     source = is_source_url(url)
     url = normalize_youtube_url(url)
-    audio_path = os.path.join(work_dir, "audio.mp3")
 
     base_opts = get_base_yt_opts(for_source=source)
     audio_opts = {
@@ -349,6 +384,8 @@ def download_audio_only(url: str, work_dir: str) -> dict:
         if entries:
             title = entries[0].get("title", title)
 
+    audio_path = find_downloaded_file(work_dir, "audio", "mp3")
+
     return {
         "title": title,
         "duration": info.get("duration", 0),
@@ -361,9 +398,6 @@ def download_instagram(url: str, work_dir: str) -> dict:
     Скачивает Instagram Reels/пост.
     Возвращает dict с путями к файлам.
     """
-    video_path = os.path.join(work_dir, "video.mp4")
-    audio_path = os.path.join(work_dir, "audio.mp3")
-
     # Для Instagram не нужен player_client, используем простые опции
     ig_base_opts = {
         "quiet": True,
@@ -387,7 +421,7 @@ def download_instagram(url: str, work_dir: str) -> dict:
     video_opts = {
         **ig_base_opts,
         "format": "bestvideo+bestaudio/best",
-        "outtmpl": video_path,
+        "outtmpl": os.path.join(work_dir, "video.%(ext)s"),
         "merge_output_format": "mp4",
     }
 
@@ -397,6 +431,9 @@ def download_instagram(url: str, work_dir: str) -> dict:
 
     title = info.get("title", "instagram_video")
     duration = info.get("duration", 0)
+
+    video_path = find_downloaded_file(work_dir, "video", "mp4")
+    logger.info(f"IG видеофайл найден: {video_path} ({os.path.getsize(video_path)} bytes)")
 
     # ── Аудио ──
     audio_opts = {
@@ -415,6 +452,8 @@ def download_instagram(url: str, work_dir: str) -> dict:
     logger.info(f"Скачиваю Instagram аудио: {url}")
     with yt_dlp.YoutubeDL(audio_opts) as ydl:
         ydl.download([url])
+
+    audio_path = find_downloaded_file(work_dir, "audio", "mp3")
 
     return {
         "title": title,
