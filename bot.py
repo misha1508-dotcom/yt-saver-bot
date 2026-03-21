@@ -13,8 +13,10 @@ import tempfile
 import shutil
 import time
 from pathlib import Path
+from functools import wraps
 
 from telegram import Update, constants
+from telegram.error import TimedOut, NetworkError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -22,6 +24,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from telegram.request import HTTPXRequest
 import yt_dlp
 
 # ─── Настройки ───────────────────────────────────────────────────────────────
@@ -62,6 +65,24 @@ PLAYER_CLIENT_STRATEGIES = [
     ["mweb"],
     ["default"],
 ]
+
+
+# ─── Telegram retry ──────────────────────────────────────────────────────────
+
+MAX_TG_RETRIES = 3
+TG_RETRY_DELAY = 5  # секунд
+
+
+async def tg_retry(coro_func, *args, **kwargs):
+    """Вызывает корутину с retry при TimedOut/NetworkError."""
+    for attempt in range(1, MAX_TG_RETRIES + 1):
+        try:
+            return await coro_func(*args, **kwargs)
+        except (TimedOut, NetworkError) as e:
+            if attempt == MAX_TG_RETRIES:
+                raise
+            logger.warning(f"Telegram retry {attempt}/{MAX_TG_RETRIES}: {e}")
+            await asyncio.sleep(TG_RETRY_DELAY)
 
 
 # ─── Утилиты ─────────────────────────────────────────────────────────────────
@@ -464,7 +485,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         logger.info(f"[{source}] Получена ссылка: {url}")
 
-    status_msg = await update.message.reply_text(f"⏳ Скачиваю из {source}… Подожди немного.")
+    status_msg = await tg_retry(update.message.reply_text, f"⏳ Скачиваю из {source}… Подожди немного.")
 
     work_dir = tempfile.mkdtemp(prefix="ytsaver_")
 
@@ -488,7 +509,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         video_compressed = False
 
         if video_size > TELEGRAM_FILE_LIMIT:
-            await status_msg.edit_text(
+            await tg_retry(status_msg.edit_text,
                 f"📦 Видео весит {video_size / 1024 / 1024:.1f} МБ — сжимаю…"
             )
             compressed_path = os.path.join(work_dir, "video_compressed.mp4")
@@ -501,7 +522,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             video_size = get_file_size(video_path)
             video_compressed = True
 
-        await status_msg.edit_text("📤 Отправляю файлы…")
+        await tg_retry(status_msg.edit_text, "📤 Отправляю файлы…")
 
         # ── Отправляем видео ──
         if video_size <= TELEGRAM_FILE_LIMIT:
@@ -509,24 +530,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 caption = f"🎬 *{title}*"
                 if video_compressed:
                     caption += "\n📦 _Сжато для Telegram_"
-                await update.message.reply_document(
+                await tg_retry(
+                    update.message.reply_document,
                     document=vf,
                     filename=f"{safe_title}.mp4",
                     caption=caption,
                     parse_mode=constants.ParseMode.MARKDOWN,
                 )
         else:
-            await update.message.reply_text(
+            await tg_retry(
+                update.message.reply_text,
                 f"⚠️ Даже после сжатия видео весит "
                 f"{video_size / 1024 / 1024:.1f} МБ (лимит 50 МБ). "
-                f"Отправляю только аудио."
+                f"Отправляю только аудио.",
             )
 
         # ── Отправляем аудио ──
         audio_size = get_file_size(audio_path)
         if audio_size <= TELEGRAM_FILE_LIMIT:
             with open(audio_path, "rb") as af:
-                await update.message.reply_audio(
+                await tg_retry(
+                    update.message.reply_audio,
                     audio=af,
                     title=title,
                     filename=f"{safe_title}.mp3",
@@ -534,11 +558,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     parse_mode=constants.ParseMode.MARKDOWN,
                 )
         else:
-            await update.message.reply_text(
-                "⚠️ Аудио тоже слишком большое для Telegram."
+            await tg_retry(
+                update.message.reply_text,
+                "⚠️ Аудио тоже слишком большое для Telegram.",
             )
 
-        await status_msg.delete()
+        await tg_retry(status_msg.delete)
 
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
@@ -582,6 +607,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ─── Запуск ───────────────────────────────────────────────────────────────────
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Глобальный обработчик ошибок."""
+    logger.error(f"Ошибка при обработке: {context.error}", exc_info=context.error)
+    if isinstance(context.error, (TimedOut, NetworkError)):
+        logger.warning("Telegram API timeout/network error — пропускаем.")
+        return
+
+
 def main() -> None:
     """Запуск бота."""
     if not BOT_TOKEN:
@@ -591,8 +624,22 @@ def main() -> None:
     logger.info(f"yt-dlp версия: {yt_dlp.version.__version__}")
     logger.info(f"Cookies файл: {'найден' if os.path.isfile(COOKIES_FILE) else 'не найден'}")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+    # Увеличиваем таймауты httpx для Telegram API
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0,
+    )
 
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .request(request)
+        .build()
+    )
+
+    app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
