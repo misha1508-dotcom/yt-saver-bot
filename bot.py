@@ -83,6 +83,15 @@ async def tg_retry(coro_func, *args, **kwargs):
                 raise
             logger.warning(f"Telegram retry {attempt}/{MAX_TG_RETRIES}: {e}")
             await asyncio.sleep(TG_RETRY_DELAY)
+            
+            # Перед повторной попыткой нужно перемотать файлы в начало,
+            # иначе telegram API получит 0 байт и выдаст "File must be non-empty"
+            for key in ("document", "audio", "video", "photo"):
+                if key in kwargs and hasattr(kwargs[key], "seek"):
+                    try:
+                        kwargs[key].seek(0)
+                    except Exception:
+                        pass
 
 
 # ─── Утилиты ─────────────────────────────────────────────────────────────────
