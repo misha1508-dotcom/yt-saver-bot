@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --upgrade "yt-dlp[default]"
 
 # Код
-COPY bot.py .
+COPY main.py .
+COPY static /app/static
 
 # Cookies (опционально)
 COPY cookies.tx[t] /app/
@@ -27,4 +28,6 @@ RUN useradd -m -u 1000 botuser && \
 
 USER botuser
 
-CMD ["python", "bot.py"]
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

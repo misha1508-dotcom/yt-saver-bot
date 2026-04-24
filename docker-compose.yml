@@ -5,11 +5,18 @@ services:
     build: .
     container_name: yt-saver
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - COOKIES_FILE=/app/cookies.txt
+    ports:
+      - "8000:8000"
     volumes:
       - yt-downloads:/tmp/yt-saver-downloads
     restart: unless-stopped
+    networks:
+      - vibe-network
 
 volumes:
   yt-downloads:
+
+networks:
+  vibe-network:
+    external: true

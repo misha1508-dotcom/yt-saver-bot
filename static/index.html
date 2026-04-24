@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Krechet Saver - Скачивание видео и аудио</title>
+    <style>
+        :root {
+            --primary: #8a2be2;
+            --secondary: #4b0082;
+            --accent: #00d2ff;
+            --bg-color: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Animated Background */
+        .bg-shapes {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            overflow: hidden;
+            background: radial-gradient(circle at 15% 50%, rgba(138, 43, 226, 0.15), transparent 25%),
+                        radial-gradient(circle at 85% 30%, rgba(0, 210, 255, 0.15), transparent 25%);
+            animation: bg-shift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bg-shift {
+            0% { transform: scale(1); }
+            100% { transform: scale(1.1); }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            padding: 2rem;
+            margin: 1rem;
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 1.25rem 1.5rem;
+            font-size: 1rem;
+            color: var(--text-main);
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .input-group input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0, 210, 255, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .input-group input::placeholder {
+            color: #64748b;
+        }
+
+        .format-selector {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .format-btn {
+            flex: 1;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .format-btn.active {
+            background: rgba(138, 43, 226, 0.2);
+            border-color: var(--primary);
+            color: #fff;
+        }
+
+        .format-btn:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .download-btn {
+            width: 100%;
+            padding: 1.25rem;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 20px -10px var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .download-btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: all 0.5s ease;
+        }
+
+        .download-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 25px -10px var(--primary);
+        }
+
+        .download-btn:hover:not(:disabled)::after {
+            left: 100%;
+        }
+
+        .download-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Status and loader */
+        .status-container {
+            margin-top: 1.5rem;
+            padding: 1.25rem;
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .status-container.visible {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .loader {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-text {
+            font-weight: 500;
+            color: var(--text-main);
+        }
+
+        .error-text {
+            color: #ef4444;
+            font-weight: 500;
+        }
+        
+        .success-text {
+            color: #10b981;
+            font-weight: 500;
+        }
+
+        /* Icons (SVG strings below) */
+        svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        .footer {
+            margin-top: 2rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="bg-shapes"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Krechet Saver</h1>
+            <p>Скачивай видео и аудио без сжатия.</p>
+        </div>
+
+        <div class="input-group">
+            <input type="url" id="urlInput" placeholder="Вставь ссылку на YouTube или Instagram..." autocomplete="off">
+        </div>
+
+        <div class="format-selector">
+            <button class="format-btn active" data-format="video" onclick="setFormat('video')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                Видео
+            </button>
+            <button class="format-btn" data-format="audio" onclick="setFormat('audio')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                Аудио (MP3)
+            </button>
+        </div>
+
+        <button id="downloadBtn" class="download-btn" onclick="startDownload()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Скачать
+        </button>
+
+        <div id="statusContainer" class="status-container">
+            <div id="loader" class="loader"></div>
+            <p id="statusText" class="status-text">Запускаем...</p>
+        </div>
+    </div>
+    
+    <div class="footer">
+        Работает с YouTube (включая Shorts) и Instagram (Reels, Posts)
+    </div>
+
+    <script>
+        let currentFormat = 'video';
+        let currentTaskId = null;
+        let pollInterval = null;
+        
+        // Base API URL handling to support hosting under /yt/ or /
+        const getBasePath = () => {
+            const path = window.location.pathname;
+            return path.endsWith('/') ? path.slice(0, -1) : path;
+        };
+
+        function setFormat(format) {
+            currentFormat = format;
+            document.querySelectorAll('.format-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.format === format) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
+        async function startDownload() {
+            const urlInput = document.getElementById('urlInput');
+            const url = urlInput.value.trim();
+            const btn = document.getElementById('downloadBtn');
+            const statusContainer = document.getElementById('statusContainer');
+            const statusText = document.getElementById('statusText');
+            const loader = document.getElementById('loader');
+
+            if (!url) {
+                alert('Пожалуйста, вставь ссылку!');
+                return;
+            }
+
+            // Reset UI
+            btn.disabled = true;
+            statusContainer.classList.add('visible');
+            loader.style.display = 'block';
+            statusText.className = 'status-text';
+            statusText.textContent = 'Обработка ссылки...';
+
+            try {
+                const response = await fetch(`${getBasePath()}/api/download`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, format: currentFormat })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Ошибка сервера');
+                }
+
+                currentTaskId = data.task_id;
+                statusText.textContent = 'Скачивание на сервер... Это может занять пару минут.';
+                
+                // Start polling
+                pollInterval = setInterval(checkStatus, 2000);
+
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function checkStatus() {
+            if (!currentTaskId) return;
+
+            try {
+                const response = await fetch(`${getBasePath()}/api/status/${currentTaskId}`);
+                if (!response.ok) throw new Error('Не удалось получить статус');
+                
+                const data = await response.json();
+
+                if (data.status === 'done') {
+                    clearInterval(pollInterval);
+                    showSuccess(data.title);
+                    
+                    // Trigger download
+                    const downloadUrl = `${getBasePath()}/api/file/${currentTaskId}`;
+                    
+                    // Create an invisible iframe or anchor to download
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = '';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    currentTaskId = null;
+                } else if (data.status === 'error') {
+                    clearInterval(pollInterval);
+                    showError(data.error || 'Неизвестная ошибка при скачивании');
+                    currentTaskId = null;
+                }
+                // If downloading, just wait
+            } catch (error) {
+                console.error(error);
+                // Don't stop polling on single network error, maybe temporary
+            }
+        }
+
+        function showError(message) {
+            const statusText = document.getElementById('statusText');
+            const loader = document.getElementById('loader');
+            const btn = document.getElementById('downloadBtn');
+            
+            loader.style.display = 'none';
+            statusText.className = 'error-text';
+            statusText.textContent = message;
+            btn.disabled = false;
+        }
+
+        function showSuccess(title) {
+            const statusText = document.getElementById('statusText');
+            const loader = document.getElementById('loader');
+            const btn = document.getElementById('downloadBtn');
+            
+            loader.style.display = 'none';
+            statusText.className = 'success-text';
+            statusText.textContent = `Готово! Скачивание: ${title}`;
+            btn.disabled = false;
+        }
+    </script>
+</body>
+</html>
