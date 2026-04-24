@@ -323,7 +323,7 @@ async def get_status(task_id: str):
     )
 
 def cleanup_task(task_id: str):
-    """Удаляет рабочую папку и очищает словарь задач после скачивания"""
+    """Удаляет рабочую папку и очищает словарь задач"""
     task = tasks.get(task_id)
     if task:
         work_dir = task.get("work_dir")
@@ -331,25 +331,51 @@ def cleanup_task(task_id: str):
             shutil.rmtree(work_dir, ignore_errors=True)
         tasks.pop(task_id, None)
 
+async def periodic_cleanup():
+    """Фоновая задача для очистки старых файлов (старше 1 часа)"""
+    while True:
+        try:
+            now = time.time()
+            to_delete = []
+            for tid, task in tasks.items():
+                work_dir = task.get("work_dir")
+                if work_dir and os.path.exists(work_dir):
+                    # Если папка создана более часа назад
+                    if now - os.path.getctime(work_dir) > 3600:
+                        to_delete.append(tid)
+            
+            for tid in to_delete:
+                logger.info(f"Очистка старой задачи {tid}")
+                cleanup_task(tid)
+        except Exception as e:
+            logger.error(f"Ошибка при периодической очистке: {e}")
+        
+        await asyncio.sleep(600)  # Проверка каждые 10 минут
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(periodic_cleanup())
+
 @app.get("/api/file/{task_id}")
-async def get_file(task_id: str, background_tasks: BackgroundTasks):
+async def get_file(task_id: str):
     task = tasks.get(task_id)
     if not task or task["status"] != "done":
         raise HTTPException(status_code=404, detail="File not ready or task not found")
         
     file_path = task["file_path"]
-    ext = os.path.splitext(file_path)[1]
+    ext = os.path.splitext(file_path)[1].lower()
     title = task.get("title", "download")
     safe_title = sanitize_filename(title)
     
     filename = f"{safe_title}{ext}"
+    media_type = "video/mp4" if ext == ".mp4" else "audio/mpeg" if ext == ".mp3" else "application/octet-stream"
     
-    # Добавляем задачу на удаление папки после отдачи файла
-    background_tasks.add_task(cleanup_task, task_id)
+    # Мы НЕ удаляем файл сразу, чтобы iOS/Браузер могли сделать несколько запросов (Range)
+    # Очистка произойдет через periodic_cleanup
     
     return FileResponse(
         path=file_path, 
         filename=filename, 
-        media_type="application/octet-stream"
+        media_type=media_type
     )
 

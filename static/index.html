@@ -306,6 +306,11 @@
         let currentFormat = 'video';
         let currentTaskId = null;
         let pollInterval = null;
+        let readyBlob = null;
+        let readyTitle = "";
+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         
         // Base API URL handling to support hosting under /yt/ or /
         const getBasePath = () => {
@@ -342,6 +347,7 @@
             loader.style.display = 'block';
             statusText.className = 'status-text';
             statusText.textContent = 'Обработка ссылки...';
+            readyBlob = null;
 
             try {
                 const response = await fetch(`${getBasePath()}/api/download`, {
@@ -378,30 +384,93 @@
 
                 if (data.status === 'done') {
                     clearInterval(pollInterval);
-                    showSuccess(data.title);
                     
-                    // Trigger download
-                    const downloadUrl = `${getBasePath()}/api/file/${currentTaskId}`;
-                    
-                    // Create an invisible iframe or anchor to download
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = '';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    
+                    if (isIOS) {
+                        prepareIOSDownload(currentTaskId, data.title);
+                    } else {
+                        showSuccess(data.title);
+                        triggerStandardDownload(currentTaskId, data.title);
+                    }
                     currentTaskId = null;
                 } else if (data.status === 'error') {
                     clearInterval(pollInterval);
                     showError(data.error || 'Неизвестная ошибка при скачивании');
                     currentTaskId = null;
                 }
-                // If downloading, just wait
             } catch (error) {
                 console.error(error);
-                // Don't stop polling on single network error, maybe temporary
             }
+        }
+
+        async function prepareIOSDownload(taskId, title) {
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = 'Видео готово! Подготовка для галереи...';
+            
+            try {
+                const downloadUrl = `${getBasePath()}/api/file/${taskId}`;
+                const response = await fetch(downloadUrl);
+                readyBlob = await response.blob();
+                readyTitle = title;
+                
+                showIOSButton();
+            } catch (error) {
+                showError("Ошибка при подготовке файла: " + error.message);
+            }
+        }
+
+        function showIOSButton() {
+            const statusText = document.getElementById('statusText');
+            const loader = document.getElementById('loader');
+            const btn = document.getElementById('downloadBtn');
+            
+            loader.style.display = 'none';
+            statusText.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:10px; width:100%;">
+                    <p class="success-text">✅ Готово!</p>
+                    <button class="download-btn" onclick="saveToPhotos()" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 10px 20px -10px #10b981;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+                        Сохранить в Фото
+                    </button>
+                    <p style="font-size:0.8rem; color:var(--text-muted);">Нажми кнопку и выбери "Сохранить видео"</p>
+                </div>
+            `;
+            btn.disabled = false;
+        }
+
+        async function saveToPhotos() {
+            if (!readyBlob) return;
+            
+            const ext = currentFormat === 'video' ? '.mp4' : '.mp3';
+            const type = currentFormat === 'video' ? 'video/mp4' : 'audio/mpeg';
+            const file = new File([readyBlob], readyTitle + ext, { type: type });
+            
+            try {
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        files: [file],
+                        title: readyTitle
+                    });
+                } else {
+                    // Fallback
+                    const url = URL.createObjectURL(readyBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = readyTitle + ext;
+                    a.click();
+                }
+            } catch (error) {
+                console.error("Share failed:", error);
+            }
+        }
+
+        function triggerStandardDownload(taskId, title) {
+            const downloadUrl = `${getBasePath()}/api/file/${taskId}`;
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
         }
 
         function showError(message) {
